@@ -5,7 +5,7 @@ import net.sourceforge.tess4j.TesseractException;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
-
+import org.apache.pdfbox.text.PDFTextStripper;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -17,14 +17,27 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.function.Function;
 
 public class OCRProcessor {
 
-    public static String extractText(PDDocument document)
+    private static final int MIN_USABLE_TEXT_LENGTH = 20;
+    private static final double MIN_ALPHANUMERIC_RATIO = 0.3;
+
+    public record PageResult(String text, boolean ocrUsed, int pageIndex) {}
+
+    public static List<PageResult> extractTextPerPage(PDDocument document)
+            throws IOException, TesseractException {
+        return extractTextPerPage(document, null);
+    }
+
+    public static List<PageResult> extractTextPerPage(PDDocument document, Function<BufferedImage, String> ocrFunction)
             throws IOException, TesseractException {
 
         PDFRenderer renderer = new PDFRenderer(document);
-        StringBuilder result = new StringBuilder();
+        PDFTextStripper stripper = new PDFTextStripper();
+        stripper.setSortByPosition(true);
 
         boolean windows = System.getProperty("os.name")
                 .toLowerCase(Locale.ROOT)
@@ -32,7 +45,7 @@ public class OCRProcessor {
 
         Tesseract tesseract = null;
 
-        if (windows) {
+        if (windows && ocrFunction == null) {
             tesseract = new Tesseract();
             tesseract.setDatapath(
                     "C:\\Program Files\\Tesseract-OCR\\tessdata"
@@ -42,23 +55,101 @@ public class OCRProcessor {
             tesseract.setVariable("user_defined_dpi", "300");
         }
 
-        for (int page = 0;
-             page < document.getNumberOfPages();
-             page++) {
+        List<PageResult> results = new ArrayList<>();
 
-            BufferedImage image =
-                    renderer.renderImageWithDPI(page, 300);
+        for (int page = 0; page < document.getNumberOfPages(); page++) {
+            stripper.setStartPage(page + 1);
+            stripper.setEndPage(page + 1);
+            String pageText = stripper.getText(document);
 
-            if (windows) {
-                result.append(tesseract.doOCR(image));
+            boolean useOcr = !isTextUsable(pageText);
+            String finalText;
+
+            if (useOcr) {
+                BufferedImage image = renderer.renderImageWithDPI(page, 300);
+                if (ocrFunction != null) {
+                    finalText = ocrFunction.apply(image);
+                } else if (windows) {
+                    finalText = tesseract.doOCR(image);
+                } else {
+                    finalText = runTesseract(image);
+                }
             } else {
-                result.append(runTesseract(image));
+                finalText = pageText;
             }
 
-            result.append("\n");
+            results.add(new PageResult(finalText, useOcr, page));
         }
 
-        return result.toString();
+        return results;
+    }
+
+    public static String extractText(PDDocument document)
+            throws IOException, TesseractException {
+        return extractTextPerPage(document).stream()
+                .map(PageResult::text)
+                .collect(Collectors.joining("\n"));
+    }
+
+    public static boolean isTextUsable(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String trimmed = text.trim();
+        if (trimmed.length() < MIN_USABLE_TEXT_LENGTH) {
+            return false;
+        }
+        long alphanumericCount = trimmed.codePoints()
+                .filter(Character::isLetterOrDigit)
+                .count();
+        double ratio = (double) alphanumericCount / trimmed.length();
+        return ratio >= MIN_ALPHANUMERIC_RATIO;
+    }
+
+    public static String extractTextFromPage(PDDocument document, int pageIndex)
+            throws IOException, TesseractException {
+        return extractTextFromPage(document, pageIndex, null);
+    }
+
+    public static String extractTextFromPage(PDDocument document, int pageIndex, Function<BufferedImage, String> ocrFunction)
+            throws IOException, TesseractException {
+        int numPages = document.getNumberOfPages();
+        if (pageIndex < 0 || pageIndex >= numPages) {
+            throw new IndexOutOfBoundsException("pageIndex " + pageIndex + " out of bounds for " + numPages + " pages");
+        }
+
+        PDFRenderer renderer = new PDFRenderer(document);
+        PDFTextStripper stripper = new PDFTextStripper();
+        stripper.setSortByPosition(true);
+        stripper.setStartPage(pageIndex + 1);
+        stripper.setEndPage(pageIndex + 1);
+        String pageText = stripper.getText(document);
+
+        boolean useOcr = !isTextUsable(pageText);
+        String finalText;
+
+        if (useOcr) {
+            BufferedImage image = renderer.renderImageWithDPI(pageIndex, 300);
+            boolean windows = System.getProperty("os.name")
+                    .toLowerCase(Locale.ROOT)
+                    .contains("win");
+            if (ocrFunction != null) {
+                finalText = ocrFunction.apply(image);
+            } else if (windows) {
+                Tesseract tesseract = new Tesseract();
+                tesseract.setDatapath("C:\\Program Files\\Tesseract-OCR\\tessdata");
+                tesseract.setLanguage("eng");
+                tesseract.setPageSegMode(3);
+                tesseract.setVariable("user_defined_dpi", "300");
+                finalText = tesseract.doOCR(image);
+            } else {
+                finalText = runTesseract(image);
+            }
+        } else {
+            finalText = pageText;
+        }
+
+        return finalText;
     }
 
     private static final List<String> DEFAULT_TESSERACT_COMMAND =

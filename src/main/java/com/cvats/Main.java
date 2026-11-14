@@ -1,14 +1,14 @@
-
 package com.cvats;
 
+import java.util.List;
 import java.util.Scanner;
 import java.io.File;
 import java.io.IOException;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.text.PDFTextStripper;
 import net.sourceforge.tess4j.TesseractException;
+
 public class Main {
 
     public static void main(String[] args) {
@@ -36,39 +36,29 @@ public class Main {
 
         try (PDDocument document = Loader.loadPDF(pdfFile)) {
 
-            PDFTextStripper stripper = new PDFTextStripper();
-            stripper.setSortByPosition(true);
+            List<OCRProcessor.PageResult> pageResults = OCRProcessor.extractTextPerPage(document);
 
-            String text = stripper.getText(document);
+            StringBuilder text = new StringBuilder();
             boolean ocrUsed = false;
 
-
-            if (text.isBlank()) {
-
-                System.out.println("PDF metin icermiyor. OCR baslatiliyor...");
-
-                ocrUsed = true;
-
-                text = OCRProcessor.extractText(document);
+            for (OCRProcessor.PageResult pr : pageResults) {
+                text.append(pr.text());
+                if (pr != pageResults.get(pageResults.size() - 1)) {
+                    text.append("\n");
+                }
+                if (pr.ocrUsed()) {
+                    ocrUsed = true;
+                }
             }
-
 
             System.out.println("\n=== CV ICERIGI ===");
 
-
-            if (text.isBlank()) {
-
+            if (text.isEmpty() || text.toString().isBlank()) {
                 System.out.println("Metin bulunamadi. OCR gerekebilir.");
-
             } else {
-
                 System.out.println(text);
-
-                ATSAnalyzer.analyze(text, ocrUsed);
-
+                ATSAnalyzer.analyze(text.toString(), ocrUsed);
             }
-
-
 
         } catch (IOException | TesseractException e) {
 
