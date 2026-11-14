@@ -84,8 +84,7 @@ Kilo Code and OpenCode broadly agreed on the major OCR, documentation, CLI, and 
 - **CLI output:** Should full extracted CV text remain the default, or become opt-in for privacy?
 - **Scope:** Maintain a terminal-only application; no web frontend is required for this remediation plan.
 
-## 7. Review limitations
+## 7. Limitations of the Analysis
 
 This report consolidates the supplied Kilo Code and OpenCode review outputs and their cited source locations. It is **not** an independent re-execution of the project, a security penetration test, or proof that every proposed failure occurs in practice. Some source line numbers are approximate and should be checked against the current commit. The suggested tests have not been run as part of this report. No source-code changes or bug fixes are claimed.
 
-**Next step:** Commit this report to the repository, then implement fixes in small, tested changes.
