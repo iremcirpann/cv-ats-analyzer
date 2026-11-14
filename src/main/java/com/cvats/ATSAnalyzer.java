@@ -1,4 +1,3 @@
-
 package com.cvats;
 
 import java.util.Locale;
@@ -29,10 +28,19 @@ public class ATSAnalyzer {
                 text, "eğitim", "education", "eğitim bilgileri"
         );
 
+
         boolean experience = hasSection(
-                text, "deneyim", "experience",
-                "iş deneyimi", "work experience"
+                text,
+                "deneyim",
+                "experience",
+                "iş deneyimi",
+                "work experience",
+                "staj",
+                "staj deneyimi",
+                "internship",
+                "internships"
         );
+
 
         boolean skills = hasSection(
                 text, "yetkinlikler", "beceriler",
@@ -194,15 +202,23 @@ public class ATSAnalyzer {
         }
     }
 
+
     private static boolean hasSection(
             String text, String... headings) {
 
         String[] lines = text.split("\\R");
 
         for (String line : lines) {
-            String cleanedLine = normalizeText(line);
+
+            String cleanedLine = normalizeText(line)
+                    .replaceFirst("^[\\s\\p{Punct}•]+", "")
+                    .replaceFirst("^\\d+[.)]\\s*", "")
+                    .replaceFirst("^[\\s\\p{Punct}•]+", "")
+                    .replaceFirst("[\\s\\p{Punct}]+$", "")
+                    .trim();
 
             for (String heading : headings) {
+
                 if (cleanedLine.equals(normalizeText(heading))) {
                     return true;
                 }
@@ -212,15 +228,19 @@ public class ATSAnalyzer {
         return false;
     }
 
+
     private static boolean hasMeasurableResults(String text) {
 
         String[] lines = text.split("\\R");
         boolean relevantSection = false;
 
+
         Pattern headingPattern = Pattern.compile(
                 "^(deneyim|is deneyimi|experience|work experience|" +
+                        "staj|staj deneyimi|internship|internships|" +
                         "projeler|projects|kisisel projeler|akademik projeler)$"
         );
+
 
         Pattern otherHeadingPattern = Pattern.compile(
                 "^(egitim|education|yetkinlikler|beceriler|skills|" +
