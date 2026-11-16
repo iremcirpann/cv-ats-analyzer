@@ -4,6 +4,8 @@ import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import javax.imageio.ImageIO;
@@ -24,6 +26,11 @@ public class OCRProcessor {
 
     private static final int MIN_USABLE_TEXT_LENGTH = 20;
     private static final double MIN_ALPHANUMERIC_RATIO = 0.3;
+    private static final int MAX_PAGE_COUNT = 50;
+    private static final int MAX_IMAGE_PIXELS = 20_000_000;
+    private static final int RENDER_DPI = 300;
+    private static final double POINTS_PER_INCH = 72.0;
+    private static final long MAX_TOTAL_SECONDS = 120;
 
     public record PageResult(String text, boolean ocrUsed, int pageIndex,
                              boolean ocrFailed, String errorMessage) {
@@ -35,11 +42,26 @@ public class OCRProcessor {
 
     public static List<PageResult> extractTextPerPage(PDDocument document)
             throws IOException, TesseractException, InterruptedException {
-        return extractTextPerPage(document, null);
+        return extractTextPerPage(document, null, Long.MAX_VALUE);
     }
 
     public static List<PageResult> extractTextPerPage(PDDocument document, Function<BufferedImage, String> ocrFunction)
             throws IOException, TesseractException, InterruptedException {
+        return extractTextPerPage(document, ocrFunction, Long.MAX_VALUE);
+    }
+
+    public static List<PageResult> extractTextPerPage(PDDocument document, Function<BufferedImage, String> ocrFunction,
+                                                       long deadlineNanos)
+            throws IOException, TesseractException, InterruptedException {
+
+        checkDeadline(deadlineNanos);
+
+        int numPages = document.getNumberOfPages();
+        if (numPages > MAX_PAGE_COUNT) {
+            throw new IOException(
+                    "PDF dosyasi 50 sayfa sinirini asti: " + numPages + " sayfa."
+            );
+        }
 
         PDFRenderer renderer = new PDFRenderer(document);
         PDFTextStripper stripper = new PDFTextStripper();
@@ -64,6 +86,8 @@ public class OCRProcessor {
         List<PageResult> results = new ArrayList<>();
 
         for (int page = 0; page < document.getNumberOfPages(); page++) {
+            checkDeadline(deadlineNanos);
+
             String pageText;
             boolean useOcr;
             try {
@@ -76,23 +100,45 @@ public class OCRProcessor {
                 continue;
             }
 
+            checkDeadline(deadlineNanos);
+
             String finalText;
             if (useOcr) {
                 BufferedImage image;
                 try {
-                    image = renderer.renderImageWithDPI(page, 300);
+                    PDPage pdfPage = document.getPage(page);
+                    if (!areImageDimensionsSafe(pdfPage, RENDER_DPI)) {
+                        throw new IOException(
+                                "OCR goruntusu piksel sinirini asti: en fazla " + MAX_IMAGE_PIXELS + " piksel izlenir."
+                        );
+                    }
+                    image = renderer.renderImageWithDPI(page, RENDER_DPI);
                 } catch (IOException e) {
                     results.add(new PageResult("", true, page, true, e.getMessage()));
                     continue;
                 }
 
+                checkDeadline(deadlineNanos);
                 try {
                     if (ocrFunction != null) {
                         finalText = ocrFunction.apply(image);
                     } else if (windows) {
+                        // Windows Tess4J doOCR() native cagrisi bloklayan, timeout almayan ve
+                        // icinde iptal edilemeyen bir islemdir. Sure kontrolu once ve sonra
+                        // yapilir ancak cagri icinde kesilemez (best-effort).
+                        checkDeadline(deadlineNanos);
                         finalText = tesseract.doOCR(image);
+                        checkDeadline(deadlineNanos);
                     } else {
-                        finalText = runTesseract(image);
+                        long remainingNanos = deadlineNanos - System.nanoTime();
+                        if (remainingNanos <= 0) {
+                            throw new IOException(
+                                    "Toplam islem butcesi (120 saniye) doldu. Analiz durduruldu."
+                            );
+                        }
+                        long subprocessTimeoutNanos =
+                                Math.min(remainingNanos, TimeUnit.SECONDS.toNanos(60));
+                        finalText = runTesseract(image, subprocessTimeoutNanos, TimeUnit.NANOSECONDS);
                     }
                 } catch (IOException | TesseractException e) {
                     results.add(new PageResult("", true, page, true, e.getMessage()));
@@ -105,12 +151,16 @@ public class OCRProcessor {
                     results.add(new PageResult("", true, page, true, e.getMessage()));
                     continue;
                 }
+
+                checkDeadline(deadlineNanos);
             } else {
                 finalText = pageText;
             }
 
             results.add(new PageResult(finalText, useOcr, page));
         }
+
+        checkDeadline(deadlineNanos);
 
         if (Thread.currentThread().isInterrupted()) {
             throw new InterruptedException("OCR islemi kesintiye ugradi");
@@ -141,6 +191,66 @@ public class OCRProcessor {
         return ratio >= MIN_ALPHANUMERIC_RATIO;
     }
 
+    static boolean areImageDimensionsSafe(PDPage page, int dpi) {
+        if (page == null) {
+            return false;
+        }
+
+        PDRectangle box = page.getCropBox();
+        if (box == null) {
+            box = page.getMediaBox();
+        }
+        if (box == null) {
+            return false;
+        }
+
+        double widthPt = box.getWidth();
+        double heightPt = box.getHeight();
+
+        if (Double.isNaN(widthPt) || Double.isInfinite(widthPt) || widthPt <= 0) {
+            return false;
+        }
+        if (Double.isNaN(heightPt) || Double.isInfinite(heightPt) || heightPt <= 0) {
+            return false;
+        }
+
+        int rotation = page.getRotation();
+        if (rotation == 90 || rotation == 270) {
+            double temp = widthPt;
+            widthPt = heightPt;
+            heightPt = temp;
+        }
+
+        double widthPx = widthPt * dpi / POINTS_PER_INCH;
+        double heightPx = heightPt * dpi / POINTS_PER_INCH;
+
+        if (Double.isNaN(widthPx) || Double.isInfinite(widthPx) || widthPx <= 0) {
+            return false;
+        }
+        if (Double.isNaN(heightPx) || Double.isInfinite(heightPx) || heightPx <= 0) {
+            return false;
+        }
+
+        if (widthPx > Double.MAX_VALUE / heightPx) {
+            return false;
+        }
+
+        double totalPixels = widthPx * heightPx;
+        if (Double.isNaN(totalPixels) || Double.isInfinite(totalPixels)) {
+            return false;
+        }
+
+        return totalPixels <= MAX_IMAGE_PIXELS;
+    }
+
+    private static void checkDeadline(long deadlineNanos) throws IOException {
+        if (System.nanoTime() >= deadlineNanos) {
+            throw new IOException(
+                    "Toplam islem butcesi (120 saniye) doldu. Analiz durduruldu."
+            );
+        }
+    }
+
     public static String extractTextFromPage(PDDocument document, int pageIndex)
             throws IOException, TesseractException {
         return extractTextFromPage(document, pageIndex, null);
@@ -164,7 +274,13 @@ public class OCRProcessor {
         String finalText;
 
         if (useOcr) {
-            BufferedImage image = renderer.renderImageWithDPI(pageIndex, 300);
+            PDPage pdfPage = document.getPage(pageIndex);
+            if (!areImageDimensionsSafe(pdfPage, RENDER_DPI)) {
+                throw new IOException(
+                        "OCR goruntusu piksel sinirini asti: en fazla " + MAX_IMAGE_PIXELS + " piksel izlenir."
+                );
+            }
+            BufferedImage image = renderer.renderImageWithDPI(pageIndex, RENDER_DPI);
             boolean windows = System.getProperty("os.name")
                     .toLowerCase(Locale.ROOT)
                     .contains("win");

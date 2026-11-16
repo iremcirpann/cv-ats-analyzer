@@ -17,6 +17,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -491,9 +492,203 @@ public class PageLevelOcrTest {
                 assertTrue(Thread.currentThread().isInterrupted(),
                         "Interrupt bayragi çağırana bildirilmeli");
             } finally {
-                // Bayragi temizle: diger testleri etkilememek icin
-                Thread.interrupted();
+            // Bayragi temizle: diger testleri etkilememek icin
+            Thread.interrupted();
             }
+        }
+    }
+
+    @Test
+    void besDokuzSayfalikPdfIzinVerilmeli() throws IOException, TesseractException, InterruptedException {
+        List<String> contents = new ArrayList<>();
+        for (int i = 0; i < 49; i++) {
+            contents.add("Sayfa " + (i + 1) + " gecerli metin icerigi burada");
+        }
+        try (PDDocument doc = createMultiPageTextDocument(contents)) {
+            List<OCRProcessor.PageResult> results = OCRProcessor.extractTextPerPage(doc);
+            assertEquals(49, results.size(), "49 sayfa kabul edilmeli");
+        }
+    }
+
+    @Test
+    void elliSayfalikPdfIzinVerilmeli() throws IOException, TesseractException, InterruptedException {
+        List<String> contents = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            contents.add("Sayfa " + (i + 1) + " gecerli metin icerigi burada");
+        }
+        try (PDDocument doc = createMultiPageTextDocument(contents)) {
+            List<OCRProcessor.PageResult> results = OCRProcessor.extractTextPerPage(doc);
+            assertEquals(50, results.size(), "50 sayfa kabul edilmeli");
+        }
+    }
+
+    @Test
+    void elliBirSayfalikPdfReddedilmeli() throws IOException {
+        List<String> contents = new ArrayList<>();
+        for (int i = 0; i < 51; i++) {
+            contents.add("Sayfa " + (i + 1) + " icerik");
+        }
+        try (PDDocument doc = createMultiPageTextDocument(contents)) {
+            IOException ex = assertThrows(
+                    IOException.class,
+                    () -> OCRProcessor.extractTextPerPage(doc),
+                    "50 sayfanin ustunde belge düzeyinde IOException firlatilmalı"
+            );
+            assertTrue(ex.getMessage().contains("50"), "Hata mesajinda sayfa siniri belirtilmeli");
+        }
+    }
+
+    @Test
+    void dosyaBoyutuAltiSinirGecerli() {
+        assertTrue(Main.dosyaBoyutuGecerli(Main.MAX_FILE_SIZE_BYTES - 1));
+    }
+
+    @Test
+    void dosyaBoyutuTamSinirGecerli() {
+        assertTrue(Main.dosyaBoyutuGecerli(Main.MAX_FILE_SIZE_BYTES));
+    }
+
+    @Test
+    void dosyaBoyutuUstuSinirGecersiz() {
+        assertFalse(Main.dosyaBoyutuGecerli(Main.MAX_FILE_SIZE_BYTES + 1));
+    }
+
+    @Test
+    void pikselLimitiAltindaSayfaGuvendir() throws IOException {
+        PDPage page = new PDPage(new PDRectangle(960, 1199));
+        assertTrue(OCRProcessor.areImageDimensionsSafe(page, 300),
+                "Piksel limitinin altinda sayfa guvende olmali");
+    }
+
+    @Test
+    void pikselLimitiTamSinirdaSayfaGuvendir() throws IOException {
+        PDPage page = new PDPage(new PDRectangle(960, 1200));
+        assertTrue(OCRProcessor.areImageDimensionsSafe(page, 300),
+                "Piksel limiti tam sinirde sayfa guvende olmali");
+    }
+
+    @Test
+    void pikselLimitiUstundeSayfaGuvenliDegildir() throws IOException {
+        PDPage page = new PDPage(new PDRectangle(960, 1201));
+        assertFalse(OCRProcessor.areImageDimensionsSafe(page, 300),
+                "Piksel limitinin uzerinde sayfa guvenli degildir");
+    }
+
+    @Test
+    void pikselLimitiAsanSayfaOcrFailedIleRaporlanirVeDigereDevamEdilir()
+            throws IOException, TesseractException, InterruptedException {
+        try (PDDocument doc = new PDDocument()) {
+            // Page 0: normal text page (no OCR)
+            PDPage textPage0 = new PDPage(PDRectangle.A4);
+            doc.addPage(textPage0);
+            try (var cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(doc, textPage0)) {
+                cs.beginText();
+                cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                cs.newLineAtOffset(50, 700);
+                cs.showText("Sayfa 1 metinli icerik");
+                cs.endText();
+            }
+
+            // Page 1: blank page with huge MediaBox -> OCR triggered, pixel limit exceeded
+            PDPage hugePage = new PDPage(new PDRectangle(1200, 1200));
+            doc.addPage(hugePage);
+
+            // Page 2: normal text page (no OCR)
+            PDPage textPage2 = new PDPage(PDRectangle.A4);
+            doc.addPage(textPage2);
+            try (var cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(doc, textPage2)) {
+                cs.beginText();
+                cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                cs.newLineAtOffset(50, 700);
+                cs.showText("Sayfa 3 metinli icerik");
+                cs.endText();
+            }
+
+            List<OCRProcessor.PageResult> results = OCRProcessor.extractTextPerPage(doc);
+
+            assertEquals(3, results.size());
+            assertFalse(results.get(0).ocrFailed(), "Sayfa 0 basarili olmali");
+            assertTrue(results.get(1).ocrFailed(), "Sayfa 1 piksel limiti asildi, ocrFailed olmali");
+            assertTrue(results.get(1).errorMessage() != null
+                            && results.get(1).errorMessage().contains("piksel"),
+                    "Hata mesajinda piksel siniri belirtilmeli");
+            assertFalse(results.get(2).ocrFailed(), "Sayfa 2 basarili olmali");
+        }
+    }
+
+    @Test
+    void sureDolmussaExtractTextPerPageTimeoutAtar() throws IOException {
+        try (PDDocument doc = createMultiPageTextDocument(List.of(
+                "Sayfa 1 metinli icerik",
+                "",
+                "Sayfa 3 metinli icerik"
+        ))) {
+            long gecmisDeadline = System.nanoTime() - 1;
+
+            IOException ex = assertThrows(
+                    IOException.class,
+                    () -> OCRProcessor.extractTextPerPage(doc, null, gecmisDeadline),
+                    "Sure dolmusken Timeout hatasi firlatilmalı"
+            );
+
+            assertTrue(ex.getMessage().contains("butcesi"), "Hata mesajinda butce doldu belirtilmeli");
+        }
+    }
+
+    @Test
+    void sureUzakGelegedeIslemeDevamEdmeli() throws IOException, TesseractException, InterruptedException {
+        try (PDDocument doc = createMultiPageTextDocument(List.of(
+                "Sayfa 1 metinli icerik",
+                "",
+                "Sayfa 3 metinli icerik"
+        ))) {
+            Function<BufferedImage, String> fakeOcr = img -> "OCR sonucu";
+            long uzakDeadline = System.nanoTime() + TimeUnit.MINUTES.toNanos(10);
+
+            List<OCRProcessor.PageResult> results = OCRProcessor.extractTextPerPage(doc, fakeOcr, uzakDeadline);
+
+            assertEquals(3, results.size());
+            assertFalse(results.get(0).ocrFailed(), "Sayfa 0 basarili olmali");
+            assertTrue(results.get(1).ocrUsed(), "Sayfa 1 bos, OCR kullanmali");
+            assertFalse(results.get(1).ocrFailed(), "Sayfa 1 basarili olmali");
+            assertFalse(results.get(2).ocrFailed(), "Sayfa 2 basarili olmali");
+        }
+    }
+
+    @Test
+    void sureDolmussaKismiSonucDondurulmezVeIslemDurur() throws IOException {
+        try (PDDocument doc = new PDDocument()) {
+            PDPage textPage0 = new PDPage(PDRectangle.A4);
+            doc.addPage(textPage0);
+            try (var cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(doc, textPage0)) {
+                cs.beginText();
+                cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                cs.newLineAtOffset(50, 700);
+                cs.showText("Sayfa 1 metinli icerik");
+                cs.endText();
+            }
+
+            doc.addPage(new PDPage(PDRectangle.A4));
+
+            PDPage textPage2 = new PDPage(PDRectangle.A4);
+            doc.addPage(textPage2);
+            try (var cs = new org.apache.pdfbox.pdmodel.PDPageContentStream(doc, textPage2)) {
+                cs.beginText();
+                cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                cs.newLineAtOffset(50, 700);
+                cs.showText("Sayfa 3 metinli icerik");
+                cs.endText();
+            }
+
+            long cokKisaDeadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1);
+
+            IOException ex = assertThrows(
+                    IOException.class,
+                    () -> OCRProcessor.extractTextPerPage(doc, null, cokKisaDeadline),
+                    "Sure dolmussa belge düzeyinde IOException firlatilmalı"
+            );
+
+            assertTrue(ex.getMessage().contains("butcesi"), "Hata mesajinda butce doldu belirtilmeli");
         }
     }
 }
