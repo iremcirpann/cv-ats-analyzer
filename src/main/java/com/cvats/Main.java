@@ -40,27 +40,44 @@ public class Main {
 
             StringBuilder text = new StringBuilder();
             boolean ocrUsed = false;
+            boolean anyFailure = false;
+            int successfulPages = 0;
+            boolean first = true;
 
-            for (OCRProcessor.PageResult pr : pageResults) {
-                text.append(pr.text());
-                if (pr != pageResults.get(pageResults.size() - 1)) {
+            for (int i = 0; i < pageResults.size(); i++) {
+                OCRProcessor.PageResult pr = pageResults.get(i);
+
+                if (pr.ocrFailed()) {
+                    anyFailure = true;
+                    System.out.println("UYARI: Sayfa " + (pr.pageIndex() + 1)
+                            + " OCR islemi basarisiz oldu: " + pr.errorMessage());
+                    continue;
+                }
+
+                if (!first) {
                     text.append("\n");
                 }
+                first = false;
+                text.append(pr.text());
                 if (pr.ocrUsed()) {
                     ocrUsed = true;
                 }
+                successfulPages++;
             }
 
             System.out.println("\n=== CV ICERIGI ===");
 
-            if (text.isEmpty() || text.toString().isBlank()) {
-                System.out.println("Metin bulunamadi. OCR gerekebilir.");
+            if (successfulPages == 0 || text.isEmpty() || text.toString().isBlank()) {
+                System.out.println("Hiçbir sayfadan kullanılabilir metin alınamadı. Analiz yapılamadı.");
             } else {
                 System.out.println(text);
+                if (anyFailure) {
+                    System.out.println("UYARI: Bazı sayfalar OCR hatası nedeniyle atlandı; analiz eksik sayfalar nedeniyle tamamlanamadı.");
+                }
                 ATSAnalyzer.analyze(text.toString(), ocrUsed);
             }
 
-        } catch (IOException | TesseractException e) {
+        } catch (IOException | TesseractException | InterruptedException e) {
 
             System.out.println(
                     "PDF veya OCR hatasi: " + e.getMessage()

@@ -25,15 +25,21 @@ public class OCRProcessor {
     private static final int MIN_USABLE_TEXT_LENGTH = 20;
     private static final double MIN_ALPHANUMERIC_RATIO = 0.3;
 
-    public record PageResult(String text, boolean ocrUsed, int pageIndex) {}
+    public record PageResult(String text, boolean ocrUsed, int pageIndex,
+                             boolean ocrFailed, String errorMessage) {
+
+        public PageResult(String text, boolean ocrUsed, int pageIndex) {
+            this(text, ocrUsed, pageIndex, false, null);
+        }
+    }
 
     public static List<PageResult> extractTextPerPage(PDDocument document)
-            throws IOException, TesseractException {
+            throws IOException, TesseractException, InterruptedException {
         return extractTextPerPage(document, null);
     }
 
     public static List<PageResult> extractTextPerPage(PDDocument document, Function<BufferedImage, String> ocrFunction)
-            throws IOException, TesseractException {
+            throws IOException, TesseractException, InterruptedException {
 
         PDFRenderer renderer = new PDFRenderer(document);
         PDFTextStripper stripper = new PDFTextStripper();
@@ -58,21 +64,46 @@ public class OCRProcessor {
         List<PageResult> results = new ArrayList<>();
 
         for (int page = 0; page < document.getNumberOfPages(); page++) {
-            stripper.setStartPage(page + 1);
-            stripper.setEndPage(page + 1);
-            String pageText = stripper.getText(document);
+            String pageText;
+            boolean useOcr;
+            try {
+                stripper.setStartPage(page + 1);
+                stripper.setEndPage(page + 1);
+                pageText = stripper.getText(document);
+                useOcr = !isTextUsable(pageText);
+            } catch (IOException e) {
+                results.add(new PageResult("", false, page, true, e.getMessage()));
+                continue;
+            }
 
-            boolean useOcr = !isTextUsable(pageText);
             String finalText;
-
             if (useOcr) {
-                BufferedImage image = renderer.renderImageWithDPI(page, 300);
-                if (ocrFunction != null) {
-                    finalText = ocrFunction.apply(image);
-                } else if (windows) {
-                    finalText = tesseract.doOCR(image);
-                } else {
-                    finalText = runTesseract(image);
+                BufferedImage image;
+                try {
+                    image = renderer.renderImageWithDPI(page, 300);
+                } catch (IOException e) {
+                    results.add(new PageResult("", true, page, true, e.getMessage()));
+                    continue;
+                }
+
+                try {
+                    if (ocrFunction != null) {
+                        finalText = ocrFunction.apply(image);
+                    } else if (windows) {
+                        finalText = tesseract.doOCR(image);
+                    } else {
+                        finalText = runTesseract(image);
+                    }
+                } catch (IOException | TesseractException e) {
+                    results.add(new PageResult("", true, page, true, e.getMessage()));
+                    if (Thread.currentThread().isInterrupted()) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    continue;
+                } catch (RuntimeException e) {
+                    results.add(new PageResult("", true, page, true, e.getMessage()));
+                    continue;
                 }
             } else {
                 finalText = pageText;
@@ -81,11 +112,15 @@ public class OCRProcessor {
             results.add(new PageResult(finalText, useOcr, page));
         }
 
+        if (Thread.currentThread().isInterrupted()) {
+            throw new InterruptedException("OCR islemi kesintiye ugradi");
+        }
+
         return results;
     }
 
     public static String extractText(PDDocument document)
-            throws IOException, TesseractException {
+            throws IOException, TesseractException, InterruptedException {
         return extractTextPerPage(document).stream()
                 .map(PageResult::text)
                 .collect(Collectors.joining("\n"));

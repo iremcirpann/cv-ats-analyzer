@@ -192,7 +192,7 @@ public class PageLevelOcrTest {
     }
 
     @Test
-    void tamMetinliPdfOcrKullanmamali() throws IOException, TesseractException {
+    void tamMetinliPdfOcrKullanmamali() throws IOException, TesseractException, InterruptedException {
         String content = "E-posta: test@example.com\nTelefon: 0555 123 45 67\n\nEğitim\nBilgisayar Mühendisliği\n\nDeneyim\nJava Developer";
         try (PDDocument doc = createTextPageDocument(content)) {
             List<OCRProcessor.PageResult> results = OCRProcessor.extractTextPerPage(doc);
@@ -205,7 +205,7 @@ public class PageLevelOcrTest {
     }
 
     @Test
-    void tamTaranmisPdfOcrKullanmali() throws IOException, TesseractException {
+    void tamTaranmisPdfOcrKullanmali() throws IOException, TesseractException, InterruptedException {
         try (PDDocument doc = createBlankPageDocument()) {
             Function<BufferedImage, String> fakeOcr = img -> "OCR sonucu: taranmış sayfa metni";
 
@@ -218,7 +218,7 @@ public class PageLevelOcrTest {
     }
 
     @Test
-    void karisikPdfDogruSayfaSirasiVeOcrRaporlamali() throws IOException, TesseractException {
+    void karisikPdfDogruSayfaSirasiVeOcrRaporlamali() throws IOException, TesseractException, InterruptedException {
         String textContent = "E-posta: test@example.com\nDeneyim\nJava Developer";
         try (PDDocument doc = createMixedDocument(textContent)) {
             Function<BufferedImage, String> fakeOcr = img -> "Sayfa 2 OCR metni";
@@ -240,7 +240,7 @@ public class PageLevelOcrTest {
     }
 
     @Test
-    void anlamsizMetinKatmanliSayfaOcrKullanmali() throws IOException, TesseractException {
+    void anlamsizMetinKatmanliSayfaOcrKullanmali() throws IOException, TesseractException, InterruptedException {
         try (PDDocument doc = createMeaninglessTextPageDocument()) {
             Function<BufferedImage, String> fakeOcr = img -> "Anlamsiz sayfa OCR sonucu";
 
@@ -253,7 +253,7 @@ public class PageLevelOcrTest {
     }
 
     @Test
-    void extractTextPerPageSayfaSirasiKorunmali() throws IOException, TesseractException {
+    void extractTextPerPageSayfaSirasiKorunmali() throws IOException, TesseractException, InterruptedException {
         String page1 = "Sayfa 1 icerigi";
         String page2 = "Sayfa 2 icerigi";
         String page3 = "Sayfa 3 icerigi";
@@ -290,7 +290,7 @@ public class PageLevelOcrTest {
     }
 
 @Test
-    void ocrFonksiyonuCagrilmaliSadeceGerekliSayfalarda() throws IOException, TesseractException {
+    void ocrFonksiyonuCagrilmaliSadeceGerekliSayfalarda() throws IOException, TesseractException, InterruptedException {
         // 3 sayfa: metinli, boş, metinli
         try (PDDocument doc = createMultiPageTextDocument(List.of(
                 "Sayfa 1 metinli icerik",
@@ -318,7 +318,7 @@ public class PageLevelOcrTest {
     }
 
     @Test
-    void extractTextSayfaAralariYeniSatirIleBirlesmeli() throws IOException, TesseractException {
+    void extractTextSayfaAralariYeniSatirIleBirlesmeli() throws IOException, TesseractException, InterruptedException {
         // Her sayfa en az 20 karakter ve yeterli alfanümerik oranda olmalı (isTextUsable için)
         String page1 = "Sayfa 1 son kelime icerigi";
         String page2 = "Sayfa 2 baslangic kelime icerigi";
@@ -336,7 +336,7 @@ public class PageLevelOcrTest {
     }
 
     @Test
-    void extractTextFromPageSadeceIstenenSayfayiIslemeli() throws IOException, TesseractException {
+    void extractTextFromPageSadeceIstenenSayfayiIslemeli() throws IOException, TesseractException, InterruptedException {
         // Her sayfa en az 20 karakter ve yeterli alfanümerik oranda olmalı
         try (PDDocument doc = createMultiPageTextDocument(List.of(
                 "Sayfa 0 icerik metni burada",
@@ -359,7 +359,7 @@ public class PageLevelOcrTest {
     }
 
     @Test
-    void extractTextFromPageBosSayfaIcinOcrCagirmali() throws IOException, TesseractException {
+    void extractTextFromPageBosSayfaIcinOcrCagirmali() throws IOException, TesseractException, InterruptedException {
         try (PDDocument doc = createMultiPageTextDocument(List.of(
                 "Sayfa 0 icerik",
                 "", // boş sayfa
@@ -393,6 +393,107 @@ public class PageLevelOcrTest {
             ex = assertThrows(IndexOutOfBoundsException.class,
                     () -> OCRProcessor.extractTextFromPage(doc, 5));
             assertTrue(ex.getMessage().contains("out of bounds"));
+        }
+    }
+
+    @Test
+    void ucSayfalikPdfIkinciSayfaOcrHataVerirseBirVeUcKorunurVeHataRaporlanir() throws IOException, TesseractException, InterruptedException {
+        // 3 sayfa: metinli, bos (OCR tetikler), metinli
+        try (PDDocument doc = createMultiPageTextDocument(List.of(
+                "Sayfa 1 metinli icerik",
+                "",
+                "Sayfa 3 metinli icerik"
+        ))) {
+            int[] ocrCallCount = {0};
+            Function<BufferedImage, String> failingOcr = img -> {
+                ocrCallCount[0]++;
+                if (ocrCallCount[0] == 1) {
+                    throw new RuntimeException("OCR hatasi: sayfa 2 islenemedi");
+                }
+                return "OCR sonucu " + ocrCallCount[0];
+            };
+
+            List<OCRProcessor.PageResult> results = OCRProcessor.extractTextPerPage(doc, failingOcr);
+
+            assertEquals(3, results.size(), "Tum sayfanin sonucu listesinde olmali");
+
+            // Sayfa 1 (index 0): metinli, OCR kullanılmaması, başarıyla korunsun
+            assertEquals(0, results.get(0).pageIndex());
+            assertFalse(results.get(0).ocrUsed(), "Sayfa 0 metinli, OCR kullanılmamalı");
+            assertFalse(results.get(0).ocrFailed(), "Sayfa 0 başarısız işaretlenmemeli");
+            assertTrue(results.get(0).text().contains("Sayfa 1 metinli icerik"), "Sayfa 1 metni korunmalı");
+
+            // Sayfa 2 (index 1): bos, OCR basarisiz, hata raporlansın
+            assertEquals(1, results.get(1).pageIndex());
+            assertTrue(results.get(1).ocrUsed(), "Sayfa 1 boş, OCR denenmeli");
+            assertTrue(results.get(1).ocrFailed(), "Sayfa 1 OCR hatası ile işaretlenmeli");
+            assertTrue(results.get(1).errorMessage() != null && results.get(1).errorMessage().contains("OCR hatasi"),
+                    "Hata mesaji raporlanmali");
+            assertTrue(results.get(1).text().isBlank(), "Basarisiz sayfa metni bos olmali");
+
+            // Sayfa 3 (index 2): metinli, OCR kullanılmaması, başarıyla korunsun
+            assertEquals(2, results.get(2).pageIndex());
+            assertFalse(results.get(2).ocrUsed(), "Sayfa 2 metinli, OCR kullanılmamalı");
+            assertFalse(results.get(2).ocrFailed(), "Sayfa 2 başarısız işaretlenmemeli");
+            assertTrue(results.get(2).text().contains("Sayfa 3 metinli icerik"), "Sayfa 3 metni korunmalı");
+
+            assertEquals(1, ocrCallCount[0], "OCR fonksiyonu sadece boş sayfa için bir kez çağrılmalı");
+        }
+    }
+
+    @Test
+    void tumSayfalardaOcrBasarisizOldugundaHiCKullanilabilirMetinOlmaz() throws IOException, TesseractException, InterruptedException {
+        // 3 sayfa: hepsi bos (OCR tetikler), hepsinde OCR basarisiz
+        try (PDDocument doc = createMultiPageTextDocument(List.of("", "", ""))) {
+            Function<BufferedImage, String> failingOcr = img -> {
+                throw new RuntimeException("OCR hatasi: tesseract calismiyor");
+            };
+
+            List<OCRProcessor.PageResult> results = OCRProcessor.extractTextPerPage(doc, failingOcr);
+
+            assertEquals(3, results.size());
+            for (OCRProcessor.PageResult pr : results) {
+                assertTrue(pr.ocrFailed(), "Her sayfa OCR hatasi ile işaretlenmeli");
+                assertTrue(pr.text().isBlank(), "Basarisiz sayfada metin olmamali");
+                assertTrue(pr.errorMessage() != null && !pr.errorMessage().isBlank(), "Hata mesaji olmali");
+            }
+        }
+    }
+
+    @Test
+    void ocrKesintisindeSonrakiSayfalaraGitmedenDurur() throws IOException, TesseractException, InterruptedException {
+        try (PDDocument doc = createMultiPageTextDocument(List.of(
+                "Sayfa 1 metinli icerik",
+                "", // bos sayfa - OCR tetikler
+                "Sayfa 3 metinli icerik"
+        ))) {
+            try {
+                int[] ocrCallCount = {0};
+                Function<BufferedImage, String> interruptingOcr = img -> {
+                    ocrCallCount[0]++;
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("OCR kesintisi");
+                };
+
+                assertFalse(Thread.currentThread().isInterrupted(),
+                        "Test basinda interrupt bayragi temiz olmali");
+
+                InterruptedException ex = assertThrows(
+                        InterruptedException.class,
+                        () -> OCRProcessor.extractTextPerPage(doc, interruptingOcr),
+                        "Kesinti durumunda InterruptedException firlatilmalı"
+                );
+
+                // OCR sadece ilk bos sayfa icin cagrilmali; dongu kirilmalı
+                assertEquals(1, ocrCallCount[0], "Kesinti sonrasi sonraki sayfalara gitilmemeli");
+
+                // Interrupt bayragi cagriyara bildirilmeli (hala ayarlı)
+                assertTrue(Thread.currentThread().isInterrupted(),
+                        "Interrupt bayragi çağırana bildirilmeli");
+            } finally {
+                // Bayragi temizle: diger testleri etkilememek icin
+                Thread.interrupted();
+            }
         }
     }
 }
