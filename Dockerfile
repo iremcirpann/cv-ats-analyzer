@@ -26,4 +26,4 @@ WORKDIR /app
 
 COPY --from=build /app/target/cv-ats-analyzer.jar /app/cv-ats-analyzer.jar
 
-CMD ["java", "-jar", "/app/cv-ats-analyzer.jar"]
+CMD ["java", "-Xmx512m", "-jar", "/app/cv-ats-analyzer.jar"]
