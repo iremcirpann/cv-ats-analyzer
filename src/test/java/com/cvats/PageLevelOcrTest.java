@@ -5,17 +5,22 @@ import org.junit.jupiter.api.io.TempDir;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.rendering.PDFRenderer;
-
+import org.apache.pdfbox.pdmodel.encryption.AccessPermission;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -689,6 +694,116 @@ public class PageLevelOcrTest {
             );
 
             assertTrue(ex.getMessage().contains("butcesi"), "Hata mesajinda butce doldu belirtilmeli");
+        }
+    }
+
+    @Test
+    void runGecerliPdfIleBasariliCikisKodu() throws Exception {
+        try (PDDocument doc = createTextPageDocument("Test metni icerigi burada")) {
+            File tempPdf = File.createTempFile("test-valid", ".pdf");
+            try {
+                doc.save(tempPdf);
+                doc.close();
+
+                int code = Main.run(new String[]{tempPdf.getAbsolutePath()});
+                assertEquals(0, code);
+            } finally {
+                Files.deleteIfExists(tempPdf.toPath());
+            }
+        }
+    }
+
+    @Test
+    void runGecersizYolIleHataCikisKodu() {
+        int code = Main.run(new String[]{"dosya-yok.pdf"});
+        assertEquals(2, code);
+    }
+
+    @Test
+    void runPdfOlmayanUzantiIleHataCikisKodu() {
+        int code = Main.run(new String[]{"dosya.txt"});
+        assertEquals(2, code);
+    }
+
+    @Test
+    void runBozukPdfIleHataCikisKodu() throws Exception {
+        File tempPdf = File.createTempFile("test-corrupt", ".pdf");
+        try {
+            Files.write(tempPdf.toPath(), "bu bir pdf dosyasi degil".getBytes(StandardCharsets.UTF_8));
+            int code = Main.run(new String[]{tempPdf.getAbsolutePath()});
+            assertEquals(1, code);
+        } finally {
+            Files.deleteIfExists(tempPdf.toPath());
+        }
+    }
+
+    @Test
+    void runSifreliPdfIleHataCikisKodu() throws Exception {
+        try (PDDocument doc = new PDDocument()) {
+            PDPage page = new PDPage(PDRectangle.A4);
+            doc.addPage(page);
+            try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
+                cs.beginText();
+                cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                cs.newLineAtOffset(50, 700);
+                cs.showText("Sifreli PDF icerigi");
+                cs.endText();
+            }
+            doc.protect(new StandardProtectionPolicy(
+                    "ownerPassword",
+                    "userPassword",
+                    new AccessPermission()
+            ));
+            File tempPdf = File.createTempFile("test-encrypted", ".pdf");
+            try {
+                doc.save(tempPdf);
+                doc.close();
+
+                int code = Main.run(new String[]{tempPdf.getAbsolutePath()});
+                assertEquals(1, code);
+            } finally {
+                Files.deleteIfExists(tempPdf.toPath());
+            }
+        }
+    }
+
+    @Test
+    void runBosGirisIleHataCikisKodu() {
+        InputStream originalIn = System.in;
+        try {
+            System.setIn(new ByteArrayInputStream("\n".getBytes(StandardCharsets.UTF_8)));
+            int code = Main.run(new String[0]);
+            assertEquals(2, code);
+        } finally {
+            System.setIn(originalIn);
+        }
+    }
+
+    @Test
+    void runEofIleHataCikisKodu() {
+        InputStream originalIn = System.in;
+        try {
+            System.setIn(new ByteArrayInputStream(new byte[0]));
+            int code = Main.run(new String[0]);
+            assertEquals(2, code);
+        } finally {
+            System.setIn(originalIn);
+        }
+    }
+
+    @Test
+    void runHiçSayfaIslenemediğindeBaşarısızCikisKodu() throws Exception {
+        try (PDDocument doc = createMultiPageTextDocument(List.of("", "", ""))) {
+            File tempPdf = File.createTempFile("test-empty", ".pdf");
+            try {
+                doc.save(tempPdf);
+                doc.close();
+
+                int code = Main.run(new String[]{tempPdf.getAbsolutePath()});
+                assertEquals(1, code);
+            } finally {
+                Files.deleteIfExists(tempPdf.toPath());
+            }
         }
     }
 }
