@@ -1,20 +1,13 @@
 package com.cvats;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
 public class ATSAnalyzer {
 
-    public static void analyze(String text, boolean ocrUsed) {
-
-        System.out.println("\n=== ATS ANALIZ RAPORU ===");
-
-        if (ocrUsed) {
-            System.out.println(
-                    "[UYARI] Bu PDF OCR ile okunmustur. " +
-                            "Bazi karakterler hatali taninmis olabilir."
-            );
-        }
+    public static AnalysisResult analyze(String text, boolean ocrUsed) {
 
         boolean email = Pattern.compile(
                 "[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"
@@ -28,7 +21,6 @@ public class ATSAnalyzer {
                 text, "eğitim", "education", "eğitim bilgileri"
         );
 
-
         boolean experience = hasSection(
                 text,
                 "deneyim",
@@ -41,7 +33,6 @@ public class ATSAnalyzer {
                 "internships"
         );
 
-
         boolean skills = hasSection(
                 text, "yetkinlikler", "beceriler",
                 "skills", "technical skills",
@@ -53,22 +44,6 @@ public class ATSAnalyzer {
                 "kişisel projeler", "akademik projeler"
         );
 
-        printResult("E-posta", email, ocrUsed);
-        printResult("Telefon", phone, ocrUsed);
-        printResult("Egitim", education, ocrUsed);
-        printResult("Deneyim", experience, ocrUsed);
-        printResult("Yetkinlikler", skills, ocrUsed);
-        printResult("Projeler", projects, ocrUsed);
-
-        int foundCount = 0;
-
-        if (email) foundCount++;
-        if (phone) foundCount++;
-        if (education) foundCount++;
-        if (experience) foundCount++;
-        if (skills) foundCount++;
-        if (projects) foundCount++;
-        double structuralScore = (foundCount / 6.0) * 100;
         String lowerText = text.toLowerCase(Locale.ROOT);
 
         boolean linkedin = lowerText.contains("linkedin.com");
@@ -76,135 +51,94 @@ public class ATSAnalyzer {
 
         boolean measurableResults = hasMeasurableResults(text);
 
-        System.out.println("\n=== ANALIZ OZETI ===");
-
-        System.out.println(
-                "Tespit edilen kriter: " + foundCount + "/6"
-        );
-
-        System.out.printf(
-                Locale.US,
-                "Yapisal uygunluk orani: %%%.1f%n",
-                structuralScore
-        );
-
-        System.out.println(
-                "Not: Bu oran yalnizca uygulamanin kontrol ettigi " +
-                        "6 yapisal kritere dayanir. Gercek bir ATS puani degildir."
-        );
-
+        List<String> ocrWarnings = new ArrayList<>();
         if (ocrUsed) {
-            System.out.println(
-                    "Not: OCR hatalari nedeniyle bu sonuc " +
-                            "kesin bir ATS uyumluluk puani degildir."
+            ocrWarnings.add(
+                    "Bu PDF OCR ile okunmustur. " +
+                            "Bazi karakterler hatali taninmis olabilir."
             );
         }
 
-        System.out.println(
-                "LinkedIn: " + (linkedin ? "Bulundu" : "Bulunamadi")
-        );
-
-        System.out.println(
-                "GitHub: " + (github ? "Bulundu" : "Bulunamadi")
-        );
-
-        System.out.println(
-                "Olculebilir basari ifadesi: " +
-                        (measurableResults ? "Bulundu" : "Bulunamadi")
-        );
-
-        System.out.println("\n=== IYILESTIRME ONERILERI ===");
+        List<String> recommendations = new ArrayList<>();
 
         if (!linkedin) {
-            System.out.println(
+            recommendations.add(
                     "- LinkedIn profilinizi eklemeyi dusunebilirsiniz."
             );
         }
 
         if (!github) {
-            System.out.println(
+            recommendations.add(
                     "- Teknik projeleriniz varsa GitHub baglantisi ekleyin."
             );
         }
 
         if (!measurableResults && experience) {
-            System.out.println(
+            recommendations.add(
                     "- Deneyimlerinizi mumkunse olculebilir " +
                             "sonuclarla destekleyin."
             );
         }
 
-        printRecommendation(
-                email, ocrUsed,
+        List<CriterionResult> criteria = new ArrayList<>();
+        criteria.add(criterion("E-posta", email,
                 "E-posta adresinizi ekleyin.",
-                "E-posta adresini orijinal PDF'den kontrol edin."
-        );
-
-        printRecommendation(
-                phone, ocrUsed,
+                "E-posta adresini orijinal PDF'den kontrol edin."));
+        criteria.add(criterion("Telefon", phone,
                 "Telefon numaranizi ekleyin.",
-                "Telefon numarasini orijinal PDF'den kontrol edin."
-        );
-
-        printRecommendation(
-                education, ocrUsed,
+                "Telefon numarasini orijinal PDF'den kontrol edin."));
+        criteria.add(criterion("Egitim", education,
                 "Egitim bolumunu ekleyin.",
-                "Egitim basligini orijinal PDF'den kontrol edin."
-        );
-
-        printRecommendation(
-                experience, ocrUsed,
+                "Egitim basligini orijinal PDF'den kontrol edin."));
+        criteria.add(criterion("Deneyim", experience,
                 "Deneyim veya stajlarinizi belirtin.",
-                "Deneyim basligini orijinal PDF'den kontrol edin."
-        );
-
-        printRecommendation(
-                skills, ocrUsed,
+                "Deneyim basligini orijinal PDF'den kontrol edin."));
+        criteria.add(criterion("Yetkinlikler", skills,
                 "Teknik becerilerinizi listeleyin.",
-                "Yetkinlikler basligini orijinal PDF'den kontrol edin."
-        );
-
-        printRecommendation(
-                projects, ocrUsed,
+                "Yetkinlikler basligini orijinal PDF'den kontrol edin."));
+        criteria.add(criterion("Projeler", projects,
                 "Projelerinizi ayri bir bolumde sunun.",
-                "Projeler basligini orijinal PDF'den kontrol edin."
+                "Projeler basligini orijinal PDF'den kontrol edin."));
+
+        for (CriterionResult criterion : criteria) {
+            if (!criterion.found()) {
+                recommendations.add(
+                        "- " + (ocrUsed
+                                ? criterion.ocrRecommendation()
+                                : criterion.recommendation())
+                );
+            }
+        }
+
+        return new AnalysisResult(
+                List.copyOf(criteria),
+                linkedin,
+                github,
+                measurableResults,
+                ocrUsed,
+                List.copyOf(ocrWarnings),
+                List.copyOf(recommendations)
         );
     }
 
-    private static void printResult(
-            String title, boolean found, boolean ocrUsed) {
-
-        if (found) {
-            System.out.println("[OK] " + title + " bulundu.");
-        } else if (ocrUsed) {
-            System.out.println(
-                    "[UYARI] " + title +
-                            " OCR sonucunda tespit edilemedi. " +
-                            "Orijinal PDF'yi kontrol edin."
-            );
-        } else {
-            System.out.println(
-                    "[!!] " + title + " tespit edilemedi."
-            );
-        }
-    }
-
-    private static void printRecommendation(
+    private static CriterionResult criterion(
+            String name,
             boolean found,
-            boolean ocrUsed,
-            String normalMessage,
-            String ocrMessage) {
-
-        if (!found) {
-            System.out.println(
-                    "- " + (ocrUsed ? ocrMessage : normalMessage)
-            );
-        }
+            String normalRecommendation,
+            String ocrRecommendation
+    ) {
+        return new CriterionResult(
+                name,
+                found,
+                found ? name : "",
+                normalRecommendation,
+                ocrRecommendation
+        );
     }
-
 
     private static boolean hasSection(
-            String text, String... headings) {
+            String text, String... headings
+    ) {
 
         String[] lines = text.split("\\R");
 
@@ -228,19 +162,16 @@ public class ATSAnalyzer {
         return false;
     }
 
-
     private static boolean hasMeasurableResults(String text) {
 
         String[] lines = text.split("\\R");
         boolean relevantSection = false;
-
 
         Pattern headingPattern = Pattern.compile(
                 "^(deneyim|is deneyimi|experience|work experience|" +
                         "staj|staj deneyimi|internship|internships|" +
                         "projeler|projects|kisisel projeler|akademik projeler)$"
         );
-
 
         Pattern otherHeadingPattern = Pattern.compile(
                 "^(egitim|education|yetkinlikler|beceriler|skills|" +

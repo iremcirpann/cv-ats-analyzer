@@ -125,7 +125,8 @@ public class Main {
                     if (anyFailure) {
                         System.out.println("UYARI: Bazı sayfalar OCR hatası nedeniyle atlandı; analiz eksik sayfalar nedeniyle tamamlanamadı.");
                     }
-                    ATSAnalyzer.analyze(text.toString(), ocrUsed);
+                    AnalysisResult result = ATSAnalyzer.analyze(text.toString(), ocrUsed);
+                    ResultRenderer.render(result);
                 }
 
                 return 0;
