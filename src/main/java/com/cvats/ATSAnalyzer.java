@@ -18,7 +18,8 @@ public class ATSAnalyzer {
         ).matcher(text).find();
 
         boolean education = hasSection(
-                text, "eğitim", "education", "eğitim bilgileri"
+                text, "eğitim", "education", "eğitim bilgileri",
+                "education background"
         );
 
         boolean experience = hasSection(
@@ -27,6 +28,10 @@ public class ATSAnalyzer {
                 "experience",
                 "iş deneyimi",
                 "work experience",
+                "professional experience",
+                "work history",
+                "employment history",
+                "profesyonel deneyim",
                 "staj",
                 "staj deneyimi",
                 "internship",
@@ -34,14 +39,16 @@ public class ATSAnalyzer {
         );
 
         boolean skills = hasSection(
-                text, "yetkinlikler", "beceriler",
+                text, "yetkinlikler", "yetenekler", "beceriler",
                 "skills", "technical skills",
-                "teknik beceriler"
+                "teknik beceriler",
+                "competencies", "skill set"
         );
 
         boolean projects = hasSection(
                 text, "projeler", "projects",
-                "kişisel projeler", "akademik projeler"
+                "kişisel projeler", "akademik projeler",
+                "personal projects", "portfolio"
         );
 
         String lowerText = text.toLowerCase(Locale.ROOT);
@@ -145,10 +152,10 @@ public class ATSAnalyzer {
         for (String line : lines) {
 
             String cleanedLine = normalizeText(line)
-                    .replaceFirst("^[\\s\\p{Punct}•]+", "")
-                    .replaceFirst("^\\d+[.)]\\s*", "")
-                    .replaceFirst("^[\\s\\p{Punct}•]+", "")
-                    .replaceFirst("[\\s\\p{Punct}]+$", "")
+                    .replaceFirst("^[\\s\\p{Punct}•►▸▶▪▫·]+", "")
+                    .replaceFirst("^(?:\\d+[:\\-.)]|[A-Za-z][.)])\\s*", "")
+                    .replaceFirst("^[\\s\\p{Punct}•►▸▶▪▫·]+", "")
+                    .replaceFirst("[\\s\\p{Punct}•►▸▶▪▫·]+$", "")
                     .trim();
 
             for (String heading : headings) {
@@ -169,13 +176,19 @@ public class ATSAnalyzer {
 
         Pattern headingPattern = Pattern.compile(
                 "^(deneyim|is deneyimi|experience|work experience|" +
+                        "professional experience|work history|employment history|" +
+                        "profesyonel deneyim|" +
                         "staj|staj deneyimi|internship|internships|" +
-                        "projeler|projects|kisisel projeler|akademik projeler)$"
+                        "projeler|projects|kisisel projeler|akademik projeler|" +
+                        "personal projects|portfolio)$"
         );
 
         Pattern otherHeadingPattern = Pattern.compile(
-                "^(egitim|education|yetkinlikler|beceriler|skills|" +
-                        "technical skills|teknik beceriler|diller|languages|" +
+                "^(egitim|education|egitim bilgileri|education background|" +
+                        "yetkinlikler|yetenekler|beceriler|skills|" +
+                        "technical skills|teknik beceriler|" +
+                        "competencies|skill set|" +
+                        "diller|languages|" +
                         "sertifikalar|certificates|certifications|hakkimda|" +
                         "about me|ozet|summary|iletisim|contact)$"
         );

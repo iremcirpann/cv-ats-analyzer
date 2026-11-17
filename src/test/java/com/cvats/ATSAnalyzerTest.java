@@ -213,4 +213,156 @@ public class ATSAnalyzerTest {
         return result.criteria().stream()
                 .anyMatch(c -> c.name().equalsIgnoreCase(name) && c.found());
     }
+
+    @Test
+    void alternatifBasliklarTaninmali() {
+        String cv = """
+            Education Background
+            Bilgisayar Mühendisliği
+
+            Professional Experience
+            Java Developer
+
+            Work History
+            5 yıl
+
+            Competencies
+            Leadership
+
+            Skill Set
+            Java, SQL
+
+            Personal Projects
+            Open Source Katkıları
+
+            Portfolio
+            CV ATS Analyzer
+            """;
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertTrue(criterionFound(result, "Egitim"));
+        assertTrue(criterionFound(result, "Deneyim"));
+        assertTrue(criterionFound(result, "Yetkinlikler"));
+        assertTrue(criterionFound(result, "Projeler"));
+    }
+
+    @Test
+    void maddeIsiklariTemizlenmeli() {
+        String cv = """
+            ► Deneyim
+            Java Developer
+
+            ▸ Projeler
+            CV ATS Analyzer
+
+            ▪ Yetkinlikler
+            Java, SQL
+            """;
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertTrue(criterionFound(result, "Deneyim"));
+        assertTrue(criterionFound(result, "Projeler"));
+        assertTrue(criterionFound(result, "Yetkinlikler"));
+    }
+
+    @Test
+    void numaralandirmaFormatlariTaninmali() {
+        String cv = """
+            1: Eğitim
+            Bilgisayar Mühendisliği
+
+            2- Deneyim
+            Java Developer
+
+            A. Projeler
+            CV ATS Analyzer
+
+            a) Skills
+            Java, SQL
+            """;
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertTrue(criterionFound(result, "Egitim"));
+        assertTrue(criterionFound(result, "Deneyim"));
+        assertTrue(criterionFound(result, "Projeler"));
+        assertTrue(criterionFound(result, "Yetkinlikler"));
+    }
+
+    @Test
+    void turkceAlternatifBasliklarTaninmali() {
+        String cv = """
+            Eğitim Bilgileri
+            Ankara Üniversitesi
+
+            Profesyonel Deneyim
+            5 yıl
+
+            Yetenekler
+            Java, SQL
+            """;
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertTrue(criterionFound(result, "Egitim"));
+        assertTrue(criterionFound(result, "Deneyim"));
+        assertTrue(criterionFound(result, "Yetkinlikler"));
+    }
+
+    @Test
+    void normalCumlelerdeAnahtarKelimelerBaslikSayilmamali() {
+        String cv = """
+            Eğitim-Life boyunca Java öğrendim.
+            Deneyim kazanmak istiyorum.
+            Staj yapmak istiyorum.
+            Projeler üzerinde çalışıyorum.
+            Skillslearned: Java, Python.
+            """;
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertFalse(criterionFound(result, "Egitim"));
+        assertFalse(criterionFound(result, "Deneyim"));
+        assertFalse(criterionFound(result, "Projeler"));
+        assertFalse(criterionFound(result, "Yetkinlikler"));
+    }
+
+    @Test
+    void genelKelimelerBolumBasligiDegildir() {
+        String cv = """
+            Üniversite: Ankara Üniversitesi
+            Mezun: 2024
+            Lisans: Bilgisayar Mühendisliği
+            Diller: Java, Python, İngilizce
+            Teknik: Java, SQL, Docker
+            Work: 5 yıl deneyim
+            """;
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertFalse(criterionFound(result, "Egitim"));
+        assertFalse(criterionFound(result, "Deneyim"));
+        assertFalse(criterionFound(result, "Yetkinlikler"));
+        assertFalse(criterionFound(result, "Projeler"));
+    }
+
+    @Test
+    void basliklaBaslayanAciklamaCumleleriYanlisPozitifUretmez() {
+        String cv = """
+            Eğitim: 2020-2024 yılı arasında öğrenim aldım.
+            Deneyim: 3 yıl Java developer olarak çalıştım.
+            Staj: Yazılım geliştirme stajı_done.
+            Projeler: CV ATS Analyzer projesi geliştirdim.
+            Skills: Java, SQL, Docker becerilerim var.
+            """;
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertFalse(criterionFound(result, "Egitim"));
+        assertFalse(criterionFound(result, "Deneyim"));
+        assertFalse(criterionFound(result, "Projeler"));
+        assertFalse(criterionFound(result, "Yetkinlikler"));
+    }
 }
