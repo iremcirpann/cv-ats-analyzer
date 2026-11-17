@@ -32,6 +32,65 @@ public class OCRProcessor {
     private static final double POINTS_PER_INCH = 72.0;
     private static final long MAX_TOTAL_SECONDS = 120;
 
+    /**
+     * Varsayılan OCR dili. Ortam değişkeni {@code OCR_LANG} ile ezilebilir.
+     * Boş veya geçersiz değerlerde bu varsayılan kullanılır.
+     */
+    private static final String DEFAULT_OCR_LANGUAGE = "tur+eng";
+
+    /**
+     * Desteklenen dil kodları (Tesseract formatında).
+     */
+    private static final java.util.Set<String> SUPPORTED_LANGUAGES =
+            java.util.Set.of("tur", "eng", "tur+eng", "eng+tur");
+
+    /**
+     * Geçerli bir OCR dil dizesi döndürür.
+     * {@code OCR_LANG} ortam değişkeni tanımlı ve desteklenen bir dil ise onu kullanır;
+     * aksi halde {@link #DEFAULT_OCR_LANGUAGE} değerini döndürür.
+     *
+     * @return Geçerli dil dizesi (örneğin "tur+eng")
+     */
+    private static String resolveOcrLanguage() {
+        return resolveOcrLanguage(System.getenv("OCR_LANG"));
+    }
+
+    /**
+     * Belirtilen ortam değişkeni değerine göre OCR dilini çözümler.
+     *
+     * @param envValue OCR_LANG ortam değişkeninin değeri (null olabilir)
+     * @return Geçerli dil dizesi (örneğin "tur+eng")
+     */
+    static String resolveOcrLanguage(String envValue) {
+        if (envValue != null && !envValue.isBlank()) {
+            String normalized = envValue.trim().toLowerCase(Locale.ROOT);
+            if (SUPPORTED_LANGUAGES.contains(normalized)) {
+                return normalized;
+            }
+        }
+        return DEFAULT_OCR_LANGUAGE;
+    }
+
+    /**
+     * Varsayılan Tesseract komutunu oluşturur.
+     * Dil bilgisi {@link #resolveOcrLanguage()} ile belirlenir.
+     *
+     * @return Tesseract komut listesi
+     */
+    static List<String> defaultTesseractCommand() {
+        List<String> cmd = new ArrayList<>(6);
+        cmd.add("tesseract");
+        cmd.add("%IMAGE%");
+        cmd.add("stdout");
+        cmd.add("-l");
+        cmd.add(resolveOcrLanguage());
+        cmd.add("--psm");
+        cmd.add("3");
+        cmd.add("--dpi");
+        cmd.add("300");
+        return cmd;
+    }
+
     public record PageResult(String text, boolean ocrUsed, int pageIndex,
                              boolean ocrFailed, String errorMessage) {
 
@@ -78,7 +137,7 @@ public class OCRProcessor {
             tesseract.setDatapath(
                     "C:\\Program Files\\Tesseract-OCR\\tessdata"
             );
-            tesseract.setLanguage("eng");
+            tesseract.setLanguage(resolveOcrLanguage());
             tesseract.setPageSegMode(3);
             tesseract.setVariable("user_defined_dpi", "300");
         }
@@ -289,7 +348,7 @@ public class OCRProcessor {
             } else if (windows) {
                 Tesseract tesseract = new Tesseract();
                 tesseract.setDatapath("C:\\Program Files\\Tesseract-OCR\\tessdata");
-                tesseract.setLanguage("eng");
+                tesseract.setLanguage(resolveOcrLanguage());
                 tesseract.setPageSegMode(3);
                 tesseract.setVariable("user_defined_dpi", "300");
                 finalText = tesseract.doOCR(image);
@@ -303,26 +362,17 @@ public class OCRProcessor {
         return finalText;
     }
 
-    private static final List<String> DEFAULT_TESSERACT_COMMAND =
-            List.of(
-                    "tesseract",
-                    "%IMAGE%",
-                    "stdout",
-                    "-l", "eng",
-                    "--psm", "3",
-                    "--dpi", "300"
-            );
-
     private static String runTesseract(BufferedImage image)
             throws IOException {
-        return runTesseract(image, 60, TimeUnit.SECONDS);
+        return runTesseract(image, 60, TimeUnit.SECONDS,
+                defaultTesseractCommand());
     }
 
     static String runTesseract(
             BufferedImage image, long timeout, TimeUnit unit)
             throws IOException {
         return runTesseract(image, timeout, unit,
-                DEFAULT_TESSERACT_COMMAND);
+                defaultTesseractCommand());
     }
 
     static String runTesseract(

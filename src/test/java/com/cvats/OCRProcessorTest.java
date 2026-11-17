@@ -156,4 +156,70 @@ public class OCRProcessorTest {
         assertTrue(ex.getMessage().contains("zaman asimina"),
                 "Zaman asimi exception'ta yer almali.");
     }
+
+    @Test
+    void resolveOcrLanguageVarsayilanTurEng() {
+        // OCR_LANG ortam değişkeni null ise varsayılan tur+eng dönmelidir.
+        assertEquals("tur+eng", OCRProcessor.resolveOcrLanguage(null));
+    }
+
+    @Test
+    void resolveOcrLanguageBosStringTurEngDonmeli() {
+        // Boş string varsayılan dil olarak tur+eng dönmelidir.
+        assertEquals("tur+eng", OCRProcessor.resolveOcrLanguage(""));
+        assertEquals("tur+eng", OCRProcessor.resolveOcrLanguage("   "));
+    }
+
+    @Test
+    void resolveOcrLanguageEngDonmeli() {
+        // Geçerli bir dil olan "eng" dönmelidir.
+        assertEquals("eng", OCRProcessor.resolveOcrLanguage("eng"));
+        assertEquals("eng", OCRProcessor.resolveOcrLanguage("ENG"));
+        assertEquals("eng", OCRProcessor.resolveOcrLanguage(" Eng "));
+    }
+
+    @Test
+    void resolveOcrLanguageTurDonmeli() {
+        // Geçerli bir dil olan "tur" dönmelidir.
+        assertEquals("tur", OCRProcessor.resolveOcrLanguage("tur"));
+        assertEquals("tur", OCRProcessor.resolveOcrLanguage("TUR"));
+    }
+
+    @Test
+    void resolveOcrLanguageTurEngDonmeli() {
+        // Geçerli bir dil olan "tur+eng" dönmelidir.
+        assertEquals("tur+eng", OCRProcessor.resolveOcrLanguage("tur+eng"));
+        assertEquals("tur+eng", OCRProcessor.resolveOcrLanguage("TUR+ENG"));
+        assertEquals("tur+eng", OCRProcessor.resolveOcrLanguage(" tur+eng "));
+    }
+
+    @Test
+    void resolveOcrLanguageEngTurDonmeli() {
+        // Geçerli bir dil olan "eng+tur" dönmelidir.
+        assertEquals("eng+tur", OCRProcessor.resolveOcrLanguage("eng+tur"));
+    }
+
+    @Test
+    void resolveOcrLanguageGecersizDegerVarsayilanDonmeli() {
+        // Geçersiz dil kodları varsayılan tur+eng olarak dönmelidir.
+        assertEquals("tur+eng", OCRProcessor.resolveOcrLanguage("xyz"));
+        assertEquals("tur+eng", OCRProcessor.resolveOcrLanguage("tur+eng+fra"));
+        assertEquals("tur+eng", OCRProcessor.resolveOcrLanguage("tuk"));
+    }
+
+    @Test
+    void defaultTesseractCommandTurEngIcerir() {
+        // Varsayılan Tesseract komutunda -l tur+eng olmalidir.
+        List<String> cmd = OCRProcessor.defaultTesseractCommand();
+        assertTrue(cmd.contains("-l"), "Komut -l parametresi içermeli.");
+        int langIndex = cmd.indexOf("-l");
+        assertTrue(langIndex + 1 < cmd.size(),
+                "-l parametresinden sonra bir değer olmali.");
+        assertEquals("tur+eng", cmd.get(langIndex + 1),
+                "Varsayilan dil tur+eng olmali.");
+        assertTrue(cmd.contains("--psm"));
+        assertTrue(cmd.contains("--dpi"));
+        assertTrue(cmd.contains("300"));
+        assertTrue(cmd.contains("stdout"));
+    }
 }

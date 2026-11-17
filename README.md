@@ -25,16 +25,37 @@ Uygulama terminal üzerinden çalışır ve web arayüzü gerektirmez.
 ## 3. Uygulamanın Özellikleri
 
 - PDF formatındaki CV dosyalarını okuma
-- Metin tabanlı PDF dosyalarından içerik çıkarma
+- Metin tabanlı PDF dosyalarından çıkarma
 - Taranmış PDF dosyalarında OCR kullanma
-- Türkçe ve İngilizce OCR desteği
+- **Türkçe ve İngilizce OCR desteği (varsayılan: tur+eng)**
 - Altı temel yapısal kriteri kontrol etme
 - Yapısal uygunluk yüzdesini hesaplama
-- LinkedIn ve GitHub bağlantılarını tespit etme
+- LinkedIn ve GitHub_connections'ı tespit etme
 - Ölçülebilir başarı ifadelerini kontrol etme
 - CV geliştirme önerileri oluşturma
 - Eksik veya bozuk PDF dosyalarında hata yönetimi
 - Docker üzerinden çalıştırma
+
+### 3.1. OCR Dil Ayarı
+
+OCR işlemi için varsayılan dil **tur+eng** (Türkçe + İngilizce) olarak ayarlanmıştır.
+
+**Ortam Değikeni:** `OCR_LANG`
+- Tanımlı ve geçerli bir değerse bu değer kullanılır.
+- Geçerli değerler: `tur`, `eng`, `tur+eng`, `eng+tur`
+- Boş veya geçersizse varsayılan `tur+eng` kullanılır.
+
+**Örnek:**
+```bash
+# Sadece İngilizce için
+export OCR_LANG=eng
+# Türkçe + İngilizce için (varsayılan)
+export OCR_LANG=tur+eng
+```
+
+**Gereksinimler:**
+- **Windows:** `C:\Program Files\Tesseract-OCR\tessdata` dizininde hem `tur.traineddata` hem de `eng.traineddata` dosyaları olmalıdır.
+- **Docker:** `Dockerfile` zaten `tesseract-ocr-tur` ve `tesseract-ocr-eng` paketlerini kurar, ek bir gereksinim yoktur.
 
 ## 4. Uygulamanın Çalışma Mantığı
 
