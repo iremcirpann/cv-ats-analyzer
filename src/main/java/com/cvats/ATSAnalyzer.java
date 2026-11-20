@@ -13,9 +13,15 @@ public class ATSAnalyzer {
                 "[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"
         ).matcher(text).find();
 
-        boolean phone = Pattern.compile(
+        boolean phoneNumberDetected = Pattern.compile(
                 "(?<!\\d)(?:\\+90\\s*|0)?5\\d{2}[\\s.-]*\\d{3}[\\s.-]*\\d{2}[\\s.-]*\\d{2}(?!\\d)"
         ).matcher(text).find();
+
+        boolean phoneLabelDetected = Pattern.compile(
+                "(?im)^\\s*(?:telefon|phone|mobile|gsm|cep)\\s*:"
+        ).matcher(text).find();
+
+        boolean phone = phoneNumberDetected || (ocrUsed && phoneLabelDetected);
 
         boolean education = hasSection(
                 text, "eğitim", "education", "eğitim bilgileri",
@@ -59,13 +65,21 @@ public class ATSAnalyzer {
         boolean measurableResults = hasMeasurableResults(text);
 
         List<String> ocrWarnings = new ArrayList<>();
+
         if (ocrUsed) {
             ocrWarnings.add(
                     "Bu PDF OCR ile okunmustur. " +
                             "Bazi karakterler hatali taninmis olabilir."
             );
-        }
 
+            if (phone) {
+                ocrWarnings.add(
+                        "Telefon numarasi OCR ile tespit edildi. " +
+                                "Numaranin rakamlari hatali okunmus olabilir. " +
+                                "Orijinal PDF ile karsilastirin."
+                );
+            }
+        }
         List<String> recommendations = new ArrayList<>();
 
         if (!linkedin) {
