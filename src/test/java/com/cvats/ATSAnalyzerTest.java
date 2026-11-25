@@ -365,4 +365,115 @@ public class ATSAnalyzerTest {
         assertFalse(criterionFound(result, "Projeler"));
         assertFalse(criterionFound(result, "Yetkinlikler"));
     }
+
+    @Test
+    void parantezliTelefonNumarasiTaninmali() {
+        String cv = "Telefon: (0555) 123 45 67";
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertTrue(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void uluslararasiFormatliTelefonTaninmali() {
+        String cv = "Telefon: +90 (555) 123 45 67";
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertTrue(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void sadeceTelefonEtiketiNumaraSayilmamali() {
+        String cv = "Telefon: gizli";
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, true);
+
+        assertFalse(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void farkliSatirlardakiRakamlarTelefonSayilmamali() {
+        String cv = "500\n123\n45\n67";
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+        assertFalse(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void yabanciUlkeKoduTurkTelefonuSayilmamali() {
+        String cv = "+1 (555) 123-4567";
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+        assertFalse(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void ciftSifirliUluslararasiFormatReddedilmeli() {
+        String cv = "+90 0555 123 45 67";
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+        assertFalse(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void siparisNumarasiTelefonSayilmamali() {
+        String cv = "Sipariş No: 5123456789";
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+        assertFalse(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void emailIleAyniSatirdakiTelefonTaninmali() {
+        String cv = "E-posta: user+1@example.com Telefon: 0555 123 45 67";
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+        assertTrue(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void referansIleAyniSatirdakiTelefonTaninmali() {
+        String cv = "Referans: Ahmet, Telefon: 0555 123 45 67";
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+        assertTrue(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void fazlaRakamliNumaraReddedilmeli() {
+        String cv = "Telefon: 0555 123 45 67 89";
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+        assertFalse(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void harflereBitisikNumaraReddedilmeli() {
+        String cv = "Kod: ABC5551234567";
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+        assertFalse(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void unicodeBoslukluTelefonTaninmali() {
+        String cv = "Telefon: 0555\u00A0123\u00A045\u00A067";
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertTrue(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void yabanciUlkeKodu0044TelefonSayilmamali() {
+        String cv = "Telefon: 0044 555 123 45 67";
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertFalse(criterionFound(result, "Telefon"));
+    }
+
+    @Test
+    void egikCizgiSonrasiFazlaRakamReddedilmeli() {
+        String cv = "Telefon: 0555 123 45 67/89";
+
+        AnalysisResult result = ATSAnalyzer.analyze(cv, false);
+
+        assertFalse(criterionFound(result, "Telefon"));
+    }
+
 }

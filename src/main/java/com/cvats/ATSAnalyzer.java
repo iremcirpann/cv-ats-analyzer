@@ -3,9 +3,46 @@ package com.cvats;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class ATSAnalyzer {
+
+    private static final Pattern TURKISH_MOBILE_PATTERN = Pattern.compile(
+            "(?<![\\p{L}\\p{N}_])" +
+                    "(?:\\+90[\\s\\x{00A0}.\\-]*(?:\\(\\s*5\\d{2}\\s*\\)|5\\d{2})" +
+                    "|\\(\\s*0?5\\d{2}\\s*\\)|0?5\\d{2})" +
+                    "[\\s\\x{00A0}.\\-]*\\d{3}[\\s\\x{00A0}.\\-]*\\d{2}[\\s\\x{00A0}.\\-]*\\d{2}" +
+                    "(?![\\s\\x{00A0}./:\\-]*\\d)(?![\\p{L}_])"
+    );
+
+    private static final Pattern FOREIGN_COUNTRY_PREFIX_AT_END = Pattern.compile(
+            "\\+\\s*(?!90\\b)\\d[\\d\\s.-]*$"
+    );
+
+    private static final Pattern FOREIGN_ESCAPE_PREFIX_AT_END = Pattern.compile(
+            "(?<!\\d)00[\\s\\x{00A0}.\\-]*(?!90\\b)\\d[\\d\\s\\x{00A0}.\\-]*$"
+    );
+
+    private static final Pattern DOUBLE_ZERO_BEFORE_90 = Pattern.compile(
+            "\\+\\s*90[\\s.-]*$"
+    );
+
+    private static final Pattern CANDIDATE_TRUNK_ZERO = Pattern.compile(
+            "^\\(?\\s*0"
+    );
+
+    private static final String[] NON_PHONE_CONTEXT_MARKERS = {
+            "siparis", "order", "fatura", "invoice", "tckn",
+            "tc kimlik", "kimlik no", "vergi", "iban", "hesap no",
+            "referans", "reference", "takip", "tracking", "kargo",
+            "barkod", "barcode", "seri no", "evrak", "sozlesme"
+    };
+
+    private static final String[] PHONE_CONTEXT_LABELS = {
+            "telefon", "phone", "mobile", "gsm", "cep",
+            "iletisim", "contact", "tel:", "tel."
+    };
 
     public static AnalysisResult analyze(String text, boolean ocrUsed) {
 
@@ -13,15 +50,7 @@ public class ATSAnalyzer {
                 "[\\w.+-]+@[\\w.-]+\\.[A-Za-z]{2,}"
         ).matcher(text).find();
 
-        boolean phoneNumberDetected = Pattern.compile(
-                "(?<!\\d)(?:\\+90\\s*|0)?5\\d{2}[\\s.-]*\\d{3}[\\s.-]*\\d{2}[\\s.-]*\\d{2}(?!\\d)"
-        ).matcher(text).find();
-
-        boolean phoneLabelDetected = Pattern.compile(
-                "(?im)^\\s*(?:telefon|phone|mobile|gsm|cep)\\s*:"
-        ).matcher(text).find();
-
-        boolean phone = phoneNumberDetected || (ocrUsed && phoneLabelDetected);
+        boolean phone = containsTurkishMobileNumber(text);
 
         boolean education = hasSection(
                 text, "eğitim", "education", "eğitim bilgileri",
@@ -155,6 +184,75 @@ public class ATSAnalyzer {
                 normalRecommendation,
                 ocrRecommendation
         );
+    }
+
+    private static boolean containsTurkishMobileNumber(String text) {
+
+        for (String line : text.split("\\R")) {
+
+            if (line.isBlank()) {
+                continue;
+            }
+
+            Matcher matcher = TURKISH_MOBILE_PATTERN.matcher(line);
+
+            while (matcher.find()) {
+
+                if (isValidPhoneCandidate(line, matcher.start(), matcher.end())) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean isValidPhoneCandidate(
+            String line, int start, int end
+    ) {
+
+        String candidate = line.substring(start, end);
+        String prefix = line.substring(0, start);
+
+        if (FOREIGN_COUNTRY_PREFIX_AT_END.matcher(prefix).find()
+                || FOREIGN_ESCAPE_PREFIX_AT_END.matcher(prefix).find()) {
+            return false;
+        }
+
+        boolean trunkZero = CANDIDATE_TRUNK_ZERO.matcher(candidate).find();
+
+        if (trunkZero && DOUBLE_ZERO_BEFORE_90.matcher(prefix).find()) {
+            return false;
+        }
+
+        String normalizedPrefix = normalizeText(prefix);
+
+        int phoneLabelIndex = lastPhoneLabelIndex(normalizedPrefix);
+        int markerIndex = lastNonPhoneMarkerIndex(normalizedPrefix);
+
+        return markerIndex < 0 || markerIndex < phoneLabelIndex;
+    }
+
+    private static int lastPhoneLabelIndex(String normalizedPrefix) {
+
+        int last = -1;
+
+        for (String label : PHONE_CONTEXT_LABELS) {
+            last = Math.max(last, normalizedPrefix.lastIndexOf(label));
+        }
+
+        return last;
+    }
+
+    private static int lastNonPhoneMarkerIndex(String normalizedPrefix) {
+
+        int last = -1;
+
+        for (String marker : NON_PHONE_CONTEXT_MARKERS) {
+            last = Math.max(last, normalizedPrefix.lastIndexOf(marker));
+        }
+
+        return last;
     }
 
     private static boolean hasSection(
